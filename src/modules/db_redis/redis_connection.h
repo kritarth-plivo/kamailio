@@ -23,11 +23,7 @@
 #ifndef _REDIS_CONNECTION_H_
 #define _REDIS_CONNECTION_H_
 
-#ifdef WITH_HIREDIS_PATH
-#include <hiredis/hiredis.h>
-#else
-#include <hiredis.h>
-#endif
+#include <hiredis-vip/hircluster.h>
 
 #include "db_redis_mod.h"
 
@@ -39,7 +35,7 @@
     if (!(reply)) { \
         LM_ERR("Failed to fetch type entry: %s\n", \
                 (con)->con->errstr); \
-        redisFree((con)->con); \
+        redisClusterFree((con)->con); \
         (con)->con = NULL; \
         goto err; \
     } \
@@ -62,7 +58,7 @@ typedef struct km_redis_con {
     unsigned int ref;
     struct pool_con* next;
 
-    redisContext *con;
+    redisClusterContext *con;
     redis_command_t *command_queue;
     unsigned int append_counter;
     struct str_hash_table tables;
