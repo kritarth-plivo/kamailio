@@ -12,3 +12,5 @@ for grp in $PACKAGE_GROUPS; do
     echo "$grp"
     #make every-module group_include="k$grp"
 done
+cp src/modules/db_redis/db_redis.so /usr/lib/x86_64-linux-gnu/kamailio/modules/db_redis.so
+kamailio -f /etc/kamailio/kamailio.cfg -D -E -dd

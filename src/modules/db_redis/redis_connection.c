@@ -156,7 +156,7 @@ int db_redis_connect(km_redis_con_t *con) {
         freeReplyObject(reply); reply = NULL;
     }
 
-    reply = redisClusterCommand(con->con, "PING");
+    /*reply = redisClusterCommand(con->con, "PING");
     if (!reply) {
         LM_ERR("cannot ping server on connection %.*s: %s\n",
                 con->id->url.len, con->id->url.s, con->con->errstr);
@@ -180,7 +180,7 @@ int db_redis_connect(km_redis_con_t *con) {
                 con->id->url.len, con->id->url.s, reply->str);
         goto err;
     }
-    freeReplyObject(reply); reply = NULL;
+    freeReplyObject(reply); reply = NULL;*/
     LM_DBG("connection opened to %.*s\n", con->id->url.len, con->id->url.s);
 
     return 0;
