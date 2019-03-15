@@ -116,7 +116,19 @@ int db_redis_connect(km_redis_con_t *con) {
     // redis server will become slave without dropping connections?
 
     LM_DBG("connecting to redis at %s:%d\n", con->id->host, con->id->port);
-    con->con = redisConnectWithTimeout(con->id->host, con->id->port, tv);
+    char* db_uri;
+
+    char db_port[5];
+    sprintf(db_port, ":%d", con->id->port);
+
+    db_uri = malloc(strlen(con->id->host)+1+5); /* make space for the new string (should check the return value ...) */
+    strcpy(db_uri, con->id->host); /* copy name into the new var */
+    strcat(db_uri, db_port); /* add the extension */
+
+    con->con = redisClusterContextInit();
+    redisClusterSetOptionAddNodes(con->con, db_uri);
+
+    redisClusterConnect2(con->con);
 
     if (!con->con) {
         LM_ERR("cannot open connection: %.*s\n", con->id->url.len, con->id->url.s);
@@ -129,7 +141,7 @@ int db_redis_connect(km_redis_con_t *con) {
     }
 
     if (con->id->password) {
-        reply = redisCommand(con->con, "AUTH %s", con->id->password);
+        reply = redisClusterCommand(con->con, "AUTH %s", con->id->password);
         if (!reply) {
             LM_ERR("cannot authenticate connection %.*s: %s\n",
                     con->id->url.len, con->id->url.s, con->con->errstr);
@@ -143,7 +155,7 @@ int db_redis_connect(km_redis_con_t *con) {
         freeReplyObject(reply); reply = NULL;
     }
 
-    reply = redisCommand(con->con, "PING");
+    /*reply = redisClusterCommand(con->con, "PING");
     if (!reply) {
         LM_ERR("cannot ping server on connection %.*s: %s\n",
                 con->id->url.len, con->id->url.s, con->con->errstr);
@@ -156,7 +168,7 @@ int db_redis_connect(km_redis_con_t *con) {
     }
     freeReplyObject(reply); reply = NULL;
 
-    reply = redisCommand(con->con, "SELECT %i", db);
+    reply = redisClusterCommand(con->con, "SELECT %i", db);
     if (!reply) {
         LM_ERR("cannot select db on connection %.*s: %s\n",
                 con->id->url.len, con->id->url.s, con->con->errstr);
@@ -167,7 +179,7 @@ int db_redis_connect(km_redis_con_t *con) {
                 con->id->url.len, con->id->url.s, reply->str);
         goto err;
     }
-    freeReplyObject(reply); reply = NULL;
+    freeReplyObject(reply); reply = NULL;*/
     LM_DBG("connection opened to %.*s\n", con->id->url.len, con->id->url.s);
 
     return 0;
@@ -176,7 +188,7 @@ err:
     if (reply)
         freeReplyObject(reply);
     if (con->con) {
-        redisFree(con->con);
+        redisClusterFree(con->con);
         con->con = NULL;
     }
     return -1;
@@ -236,7 +248,7 @@ km_redis_con_t* db_redis_new_connection(const struct db_id* id) {
  err:
     if (ptr) {
         if (ptr->con) {
-            redisFree(ptr->con);
+            redisClusterFree(ptr->con);
         }
         pkg_free(ptr);
     }
@@ -258,7 +270,7 @@ void db_redis_free_connection(struct pool_con* con) {
 
     if (_c->id) free_db_id(_c->id);
     if (_c->con) {
-        redisFree(_c->con);
+        redisClusterFree(_c->con);
     }
 
     db_redis_free_tables(_c);
@@ -278,18 +290,18 @@ void *db_redis_command_argv(km_redis_con_t *con, redis_key_t *query) {
     }
     LM_DBG("query has %d args\n", argc);
 
-    redisReply *reply = redisCommandArgv(con->con, argc, (const char**)argv, NULL);
+    redisReply *reply = redisClusterCommandArgv(con->con, argc, (const char**)argv, NULL);
     if (con->con->err == REDIS_ERR_EOF) {
         if (db_redis_connect(con) != 0) {
             LM_ERR("Failed to reconnect to redis db\n");
             pkg_free(argv);
             if (con->con) {
-                redisFree(con->con);
+                redisClusterFree(con->con);
                 con->con = NULL;
             }
             return NULL;
         }
-        reply = redisCommandArgv(con->con, argc, (const char**)argv, NULL);
+        reply = redisClusterCommandArgv(con->con, argc, (const char**)argv, NULL);
     }
     pkg_free(argv);
     return reply;
@@ -313,22 +325,22 @@ int db_redis_append_command_argv(km_redis_con_t *con, redis_key_t *query, int qu
     }
     LM_DBG("query has %d args\n", argc);
 
-    ret = redisAppendCommandArgv(con->con, argc, (const char**)argv, NULL);
+    ret = redisClusterAppendCommandArgv(con->con, argc, (const char**)argv, NULL);
 
     // this should actually never happen, because if all replies
     // are properly consumed for the previous command, it won't send
-    // out a new query until redisGetReply is called
+    // out a new query until redisClusterGetReply is called
     if (con->con->err == REDIS_ERR_EOF) {
         if (db_redis_connect(con) != 0) {
             LM_ERR("Failed to reconnect to redis db\n");
             pkg_free(argv);
             if (con->con) {
-                redisFree(con->con);
+                redisClusterFree(con->con);
                 con->con = NULL;
             }
             return ret;
         }
-        ret = redisAppendCommandArgv(con->con, argc, (const char**)argv, NULL);
+        ret = redisClusterAppendCommandArgv(con->con, argc, (const char**)argv, NULL);
     }
     pkg_free(argv);
     if (!con->con->err) {
@@ -347,14 +359,14 @@ int db_redis_get_reply(km_redis_con_t *con, void **reply) {
     }
 
     *reply = NULL;
-    ret = redisGetReply(con->con, reply);
+    ret = redisClusterGetReply(con->con, reply);
     if (con->con->err == REDIS_ERR_EOF) {
         LM_DBG("redis connection is gone, try reconnect\n");
         con->append_counter = 0;
         if (db_redis_connect(con) != 0) {
             LM_ERR("Failed to reconnect to redis db\n");
             if (con->con) {
-                redisFree(con->con);
+                redisClusterFree(con->con);
                 con->con = NULL;
             }
             return -1;
@@ -369,7 +381,7 @@ int db_redis_get_reply(km_redis_con_t *con, void **reply) {
             }
             db_redis_key_free(&query);
         }
-        ret = redisGetReply(con->con, reply);
+        ret = redisClusterGetReply(con->con, reply);
         if (con->con->err != REDIS_ERR_EOF) {
             con->append_counter--;
         }
