@@ -126,7 +126,6 @@ int db_redis_connect(km_redis_con_t *con) {
     strcat(db_uri, db_port); /* add the extension */
 
     con->con = redisClusterContextInit();
-    printf("LOL: %s\n", db_uri);
     redisClusterSetOptionAddNodes(con->con, db_uri);
 
     redisClusterConnect2(con->con);
